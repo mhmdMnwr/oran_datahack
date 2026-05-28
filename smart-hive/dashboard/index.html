@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐝 Smart Hive Monitor — Live Dashboard</title>
+<meta name="description" content="Real-time IoT beehive monitoring dashboard with live MQTT telemetry, sensor charts, GPS mapping, and alert management.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+--bg:#1a1a1a;--bg2:#222;--bg3:#2a2a2a;--bg4:#333;
+--amber:#f5a623;--amber-glow:#f5a62344;--amber-dim:#a06a10;
+--honey:#e8a317;--honey-light:#ffd966;
+--red:#ff4d4d;--yellow:#ffd93d;--green:#4caf50;--cyan:#00e5ff;
+--text:#e0e0e0;--text-dim:#888;--text-bright:#fff;
+--radius:12px;--font-mono:'JetBrains Mono',monospace;--font-sans:'Inter',sans-serif;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);min-height:100vh;overflow-x:hidden}
+/* Hexagon BG pattern */
+body::before{content:'';position:fixed;inset:0;opacity:.03;z-index:0;pointer-events:none;
+background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100' viewBox='0 0 56 100'%3E%3Cpath d='M28 66L0 50V16L28 0l28 16v34L28 66zm0 34L0 84V50l28-16 28 16v34L28 100z' fill='%23f5a623' fill-opacity='0.3'/%3E%3C/svg%3E");
+}
+.app{position:relative;z-index:1;max-width:1400px;margin:0 auto;padding:16px}
+/* Header */
+header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;
+background:linear-gradient(135deg,var(--bg2),var(--bg3));border:1px solid var(--bg4);
+border-radius:var(--radius);margin-bottom:16px;position:relative;overflow:hidden}
+header::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--amber),transparent)}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-icon{font-size:2rem}
+.logo h1{font-family:var(--font-mono);font-size:1.4rem;color:var(--amber);text-transform:uppercase;letter-spacing:2px}
+.logo span{font-size:.75rem;color:var(--text-dim);letter-spacing:1px}
+#connStatus{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:.85rem;padding:8px 16px;border-radius:20px;background:var(--bg);border:1px solid var(--bg4)}
+#connDot{width:10px;height:10px;border-radius:50%;background:var(--red);transition:all .3s;box-shadow:0 0 6px var(--red)}
+#connDot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
+/* Grid layout */
+.grid{display:grid;grid-template-columns:280px 1fr;grid-template-rows:auto auto auto;gap:16px}
+.cards-col{display:flex;flex-direction:column;gap:12px}
+/* Sensor Cards */
+.sensor-card{background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius);padding:16px;position:relative;overflow:hidden;transition:border-color .3s,box-shadow .3s}
+.sensor-card:hover{border-color:var(--amber-dim);box-shadow:0 0 20px var(--amber-glow)}
+.sensor-card::before{content:'';position:absolute;top:0;left:0;width:4px;height:100%;background:var(--amber)}
+.sensor-card .label{font-size:.7rem;text-transform:uppercase;letter-spacing:2px;color:var(--text-dim);margin-bottom:4px;padding-left:12px}
+.sensor-card .value{font-family:var(--font-mono);font-size:1.8rem;font-weight:700;color:var(--text-bright);padding-left:12px}
+.sensor-card .unit{font-size:.9rem;color:var(--amber);margin-left:4px}
+.sensor-card .meta{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-left:12px;font-size:.7rem;color:var(--text-dim)}
+.badge{padding:2px 8px;border-radius:10px;font-size:.65rem;font-weight:600;text-transform:uppercase;letter-spacing:1px}
+.badge.normal{background:#4caf5022;color:var(--green);border:1px solid #4caf5044}
+.badge.warning{background:#ffd93d22;color:var(--yellow);border:1px solid #ffd93d44}
+.badge.alert{background:#ff4d4d22;color:var(--red);border:1px solid #ff4d4d44}
+.sensor-card.temp::before{background:#ff6b35}
+.sensor-card.humid::before{background:var(--cyan)}
+.sensor-card.weight::before{background:var(--honey)}
+.sensor-card.gps::before{background:var(--green)}
+/* Chart Panel */
+.chart-panel{background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius);padding:16px;position:relative}
+.chart-panel .panel-title{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:2px;color:var(--amber);margin-bottom:12px}
+#liveChart{width:100%!important;max-height:260px}
+/* Map Panel */
+.map-panel{background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius);padding:16px;grid-column:1/-1}
+.map-panel .panel-title{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:2px;color:var(--amber);margin-bottom:12px}
+#map{height:250px;border-radius:8px;z-index:1}
+/* Control Panel */
+.control-panel{background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius);padding:16px;grid-column:1/-1}
+.control-panel .panel-title{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:2px;color:var(--amber);margin-bottom:12px}
+.btn-grid{display:flex;flex-wrap:wrap;gap:10px}
+.btn{font-family:var(--font-mono);font-size:.8rem;padding:10px 18px;border:1px solid var(--bg4);border-radius:8px;background:var(--bg3);color:var(--text);cursor:pointer;transition:all .15s;position:relative;overflow:hidden;user-select:none}
+.btn:hover{border-color:var(--amber);color:var(--amber);box-shadow:0 0 15px var(--amber-glow)}
+.btn:active{transform:scale(.96);background:var(--bg4)}
+.btn.active{border-color:var(--green);color:var(--green);box-shadow:0 0 12px #4caf5033}
+.btn.danger{border-color:var(--red);color:var(--red)}
+.btn.danger:hover{box-shadow:0 0 15px #ff4d4d33}
+.btn .spinner{display:none;width:14px;height:14px;border:2px solid transparent;border-top-color:currentColor;border-radius:50%;animation:spin .6s linear infinite;margin-left:6px;vertical-align:middle}
+.btn.loading .spinner{display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* Alert Log */
+.alert-panel{background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius);padding:16px;grid-column:1/-1;max-height:220px;display:flex;flex-direction:column}
+.alert-panel .panel-title{font-family:var(--font-mono);font-size:.8rem;text-transform:uppercase;letter-spacing:2px;color:var(--amber);margin-bottom:12px}
+#alertLog{flex:1;overflow-y:auto;font-family:var(--font-mono);font-size:.75rem;scrollbar-width:thin;scrollbar-color:var(--bg4) transparent}
+#alertLog::-webkit-scrollbar{width:6px}
+#alertLog::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:3px}
+.alert-entry{padding:6px 10px;border-left:3px solid var(--amber);margin-bottom:4px;background:var(--bg3);border-radius:0 6px 6px 0;animation:slideIn .3s ease}
+.alert-entry.level-alert{border-left-color:var(--red)}
+.alert-entry.level-warning{border-left-color:var(--yellow)}
+.alert-entry.level-swarm{border-left-color:var(--red);background:#ff4d4d11}
+.alert-entry .time{color:var(--text-dim)}
+.alert-entry .msg{color:var(--text-bright)}
+@keyframes slideIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
+/* Responsive */
+@media(max-width:768px){.grid{grid-template-columns:1fr}.cards-col{flex-direction:row;flex-wrap:wrap}.sensor-card{flex:1;min-width:140px}}
+/* Leaflet dark tiles */
+.leaflet-container{background:var(--bg)!important}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+<div class="logo">
+<div class="logo-icon">🐝</div>
+<div><h1>Smart Hive Monitor</h1><span>IoT Telemetry Dashboard</span></div>
+</div>
+<div id="connStatus"><div id="connDot"></div><span id="connLabel">Disconnected</span></div>
+</header>
+
+<div class="grid">
+<!-- Sensor Cards Column -->
+<div class="cards-col">
+<div class="sensor-card temp" id="cardTemp">
+<div class="label">🌡️ Temperature</div>
+<div class="value"><span id="valTemp">--</span><span class="unit">°C</span></div>
+<div class="meta"><span id="timeTemp">--:--:--</span><span class="badge normal" id="badgeTemp">Normal</span></div>
+</div>
+<div class="sensor-card humid" id="cardHumid">
+<div class="label">💧 Humidity</div>
+<div class="value"><span id="valHumid">--</span><span class="unit">%</span></div>
+<div class="meta"><span id="timeHumid">--:--:--</span><span class="badge normal" id="badgeHumid">Normal</span></div>
+</div>
+<div class="sensor-card weight" id="cardWeight">
+<div class="label">⚖️ Weight</div>
+<div class="value"><span id="valWeight">--</span><span class="unit">kg</span></div>
+<div class="meta"><span id="timeWeight">--:--:--</span><span class="badge normal" id="badgeWeight">Normal</span></div>
+</div>
+<div class="sensor-card gps" id="cardGps">
+<div class="label">📍 GPS Location</div>
+<div class="value" style="font-size:1rem"><span id="valGps">--</span></div>
+<div class="meta"><span id="timeGps">--:--:--</span><span class="badge normal" id="badgeGps">Tracking</span></div>
+</div>
+</div>
+
+<!-- Chart -->
+<div class="chart-panel">
+<div class="panel-title">📈 Live Telemetry — Temperature &amp; Humidity (Last 30 Readings)</div>
+<canvas id="liveChart"></canvas>
+</div>
+
+<!-- Map -->
+<div class="map-panel">
+<div class="panel-title">🗺️ Hive GPS Tracker</div>
+<div id="map"></div>
+</div>
+
+<!-- Controls -->
+<div class="control-panel">
+<div class="panel-title">🎛️ Simulation Control Panel</div>
+<div class="btn-grid">
+<button class="btn" id="btnStart" onclick="startSim()">▶ Start Sim<span class="spinner"></span></button>
+<button class="btn" id="btnStop" onclick="stopSim()">⏹ Stop Sim</button>
+<button class="btn" id="btnSpikeTemp" onclick="spikeTemp()">🌡 Spike Temp</button>
+<button class="btn" id="btnSpikeHumid" onclick="spikeHumid()">💧 Spike Humid</button>
+<button class="btn" id="btnAddWeight" onclick="addWeight()">⚖ Add Weight</button>
+<button class="btn danger" id="btnSwarm" onclick="triggerSwarm()">🚨 Swarm Alert</button>
+</div>
+</div>
+
+<!-- Alert Log -->
+<div class="alert-panel">
+<div class="panel-title">🔔 Alert Log</div>
+<div id="alertLog"><div style="color:var(--text-dim);text-align:center;padding:20px">No alerts yet — system nominal</div></div>
+</div>
+</div>
+</div>
+
+<script>
+/* ── CONFIG ─────────────────────────────────── */
+const BROKER_WS = 'wss://broker.hivemq.com:8884/mqtt';
+const TOPICS = {
+  temperature: 'hive/sensors/temperature',
+  humidity:    'hive/sensors/humidity',
+  gps:         'hive/sensors/gps',
+  weight:      'hive/sensors/weight'
+};
+const WILDCARD = 'hive/sensors/#';
+const MAX_CHART_POINTS = 30;
+const ALERT_TEMP = 40, ALERT_HUMID = 85, ALERT_WEIGHT_DROP = 5;
+
+/* ── STATE ──────────────────────────────────── */
+let client = null, simInterval = null, simRunning = false;
+let lastWeight = null, currentWeight = 30;
+let gpsLat = 36.7538, gpsLon = 3.0588;
+let tempTrend = 35, humidTrend = 65;
+const chartLabels = [], tempData = [], humidData = [];
+const gpsTrail = [];
+
+/* ── MQTT CONNECTION ────────────────────────── */
+function mqttConnect() {
+  const id = 'hive-dash-' + Math.random().toString(16).slice(2,8);
+  client = mqtt.connect(BROKER_WS, { clientId: id, clean: true, reconnectPeriod: 3000 });
+  client.on('connect', () => {
+    setConn(true);
+    client.subscribe(WILDCARD, { qos: 0 });
+  });
+  client.on('close', () => setConn(false));
+  client.on('error', () => setConn(false));
+  client.on('message', (topic, msg) => {
+    try { handleMessage(topic, JSON.parse(msg.toString())); } catch(e) {}
+  });
+}
+
+function setConn(on) {
+  const dot = document.getElementById('connDot');
+  const lbl = document.getElementById('connLabel');
+  dot.className = on ? 'on' : '';
+  lbl.textContent = on ? 'Connected' : 'Disconnected';
+}
+
+/* ── MESSAGE HANDLER ────────────────────────── */
+function handleMessage(topic, d) {
+  const sensor = d.sensor || topic.split('/').pop();
+  const ts = d.timestamp ? new Date(d.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+  if (sensor === 'temperature') {
+    document.getElementById('valTemp').textContent = d.value.toFixed(1);
+    document.getElementById('timeTemp').textContent = ts;
+    updateBadge('badgeTemp', d.value > ALERT_TEMP ? 'alert' : 'normal', d.value > ALERT_TEMP ? 'Alert' : 'Normal');
+    if (d.value > ALERT_TEMP) addAlert('alert', `Temperature ${d.value.toFixed(1)}°C exceeds ${ALERT_TEMP}°C threshold`);
+    pushChart(ts, d.value, null);
+    pulseCard('cardTemp');
+  } else if (sensor === 'humidity') {
+    document.getElementById('valHumid').textContent = d.value.toFixed(1);
+    document.getElementById('timeHumid').textContent = ts;
+    updateBadge('badgeHumid', d.value > ALERT_HUMID ? 'warning' : 'normal', d.value > ALERT_HUMID ? 'Warning' : 'Normal');
+    if (d.value > ALERT_HUMID) addAlert('warning', `Humidity ${d.value.toFixed(1)}% exceeds ${ALERT_HUMID}% threshold`);
+    pushChart(ts, null, d.value);
+    pulseCard('cardHumid');
+  } else if (sensor === 'weight') {
+    document.getElementById('valWeight').textContent = d.value.toFixed(1);
+    document.getElementById('timeWeight').textContent = ts;
+    if (lastWeight !== null && (lastWeight - d.value) > ALERT_WEIGHT_DROP) {
+      updateBadge('badgeWeight', 'alert', 'Swarm!');
+      addAlert('swarm', `Weight dropped ${(lastWeight - d.value).toFixed(1)}kg — possible swarm departure`);
+    } else { updateBadge('badgeWeight', 'normal', 'Normal'); }
+    lastWeight = d.value;
+    pulseCard('cardWeight');
+  } else if (sensor === 'gps') {
+    document.getElementById('valGps').textContent = `${d.lat.toFixed(4)}, ${d.lon.toFixed(4)}`;
+    document.getElementById('timeGps').textContent = ts;
+    updateMap(d.lat, d.lon);
+    pulseCard('cardGps');
+  }
+}
+
+function updateBadge(id, level, text) {
+  const el = document.getElementById(id);
+  el.className = 'badge ' + level;
+  el.textContent = text;
+}
+
+function pulseCard(id) {
+  const el = document.getElementById(id);
+  el.style.boxShadow = '0 0 20px var(--amber-glow)';
+  setTimeout(() => el.style.boxShadow = '', 400);
+}
+
+/* ── CHART ──────────────────────────────────── */
+const ctx = document.getElementById('liveChart').getContext('2d');
+const chart = new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: chartLabels,
+    datasets: [
+      { label: 'Temperature (°C)', data: tempData, borderColor: '#ff6b35', backgroundColor: '#ff6b3522',
+        yAxisID: 'y', tension: .3, pointRadius: 2, borderWidth: 2, fill: true },
+      { label: 'Humidity (%)', data: humidData, borderColor: '#00e5ff', backgroundColor: '#00e5ff22',
+        yAxisID: 'y1', tension: .3, pointRadius: 2, borderWidth: 2, fill: true }
+    ]
+  },
+  options: {
+    responsive: true, animation: { duration: 300 },
+    plugins: { legend: { labels: { color: '#888', font: { family: 'JetBrains Mono', size: 11 } } } },
+    scales: {
+      x: { ticks: { color: '#555', maxRotation: 0, maxTicksLimit: 8, font: { size: 10 } }, grid: { color: '#333' } },
+      y: { type: 'linear', position: 'left', min: 28, max: 45,
+           ticks: { color: '#ff6b35', font: { size: 10 } }, grid: { color: '#2a2a2a' },
+           title: { display: true, text: '°C', color: '#ff6b35' } },
+      y1: { type: 'linear', position: 'right', min: 40, max: 100,
+            ticks: { color: '#00e5ff', font: { size: 10 } }, grid: { drawOnChartArea: false },
+            title: { display: true, text: '%', color: '#00e5ff' } }
+    }
+  }
+});
+
+function pushChart(label, temp, humid) {
+  if (temp !== null) {
+    if (tempData.length === 0 && chartLabels.length === 0) chartLabels.push(label);
+    else if (temp !== null && chartLabels[chartLabels.length-1] !== label) chartLabels.push(label);
+    tempData.push(temp);
+  }
+  if (humid !== null) {
+    if (humidData.length < tempData.length -1) { while(humidData.length < tempData.length -1) humidData.push(null); }
+    humidData.push(humid);
+  }
+  while (chartLabels.length > MAX_CHART_POINTS) { chartLabels.shift(); tempData.shift(); humidData.shift(); }
+  chart.update();
+}
+
+/* ── MAP ────────────────────────────────────── */
+const map = L.map('map').setView([36.7538, 3.0588], 16);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '© OpenStreetMap © CARTO', maxZoom: 19
+}).addTo(map);
+let marker = L.marker([36.7538, 3.0588]).addTo(map);
+let polyline = L.polyline([], { color: '#f5a623', weight: 3, opacity: 0.7 }).addTo(map);
+
+function updateMap(lat, lon) {
+  marker.setLatLng([lat, lon]);
+  gpsTrail.push([lat, lon]);
+  if (gpsTrail.length > 10) gpsTrail.shift();
+  polyline.setLatLngs(gpsTrail);
+  map.panTo([lat, lon]);
+}
+
+/* ── ALERTS ─────────────────────────────────── */
+function addAlert(level, msg) {
+  const log = document.getElementById('alertLog');
+  if (log.querySelector('div[style]')) log.innerHTML = '';
+  const el = document.createElement('div');
+  el.className = 'alert-entry level-' + level;
+  const icon = level === 'alert' ? '🔴' : level === 'warning' ? '🟡' : '🔴';
+  el.innerHTML = `<span class="time">${new Date().toLocaleTimeString()}</span> ${icon} <span class="msg">${msg}</span>`;
+  log.prepend(el);
+  while (log.children.length > 50) log.removeChild(log.lastChild);
+}
+
+/* ── SIMULATION (browser-side) ──────────────── */
+function publishMsg(topic, payload) {
+  payload.timestamp = new Date().toISOString();
+  if (client && client.connected) {
+    client.publish(topic, JSON.stringify(payload));
+  }
+  handleMessage(topic, payload);
+}
+
+function simTick() {
+  tempTrend += (Math.random() - .5) * .4;
+  tempTrend = Math.max(32, Math.min(38, tempTrend));
+  const t = +(tempTrend + (Math.random() - .5) * .6).toFixed(2);
+  publishMsg(TOPICS.temperature, { sensor: 'temperature', value: t, unit: '°C' });
+
+  humidTrend += (Math.random() - .5) * 1;
+  humidTrend = Math.max(50, Math.min(80, humidTrend));
+  const h = +(humidTrend + (Math.random() - .5) * 2).toFixed(2);
+  publishMsg(TOPICS.humidity, { sensor: 'humidity', value: h, unit: '%' });
+
+  currentWeight += Math.random() * .05;
+  currentWeight = Math.min(60, currentWeight);
+  const w = +(currentWeight + (Math.random() - .5) * .3).toFixed(2);
+  publishMsg(TOPICS.weight, { sensor: 'weight', value: w, unit: 'kg' });
+
+  gpsLat += (Math.random() - .5) * .0002;
+  gpsLon += (Math.random() - .5) * .0002;
+  publishMsg(TOPICS.gps, { sensor: 'gps', lat: +gpsLat.toFixed(6), lon: +gpsLon.toFixed(6) });
+}
+
+function startSim() {
+  if (simRunning) return;
+  simRunning = true;
+  const btn = document.getElementById('btnStart');
+  btn.classList.add('active', 'loading');
+  setTimeout(() => btn.classList.remove('loading'), 600);
+  simTick();
+  simInterval = setInterval(simTick, 2000);
+  addAlert('warning', 'Simulation started from dashboard');
+}
+
+function stopSim() {
+  if (!simRunning) return;
+  simRunning = false;
+  clearInterval(simInterval);
+  const btn = document.getElementById('btnStart');
+  btn.classList.remove('active', 'loading');
+  addAlert('warning', 'Simulation stopped');
+}
+
+function spikeTemp() {
+  const btn = document.getElementById('btnSpikeTemp');
+  btn.classList.add('loading');
+  setTimeout(() => btn.classList.remove('loading'), 500);
+  publishMsg(TOPICS.temperature, { sensor: 'temperature', value: 42.0, unit: '°C' });
+}
+
+function spikeHumid() {
+  const btn = document.getElementById('btnSpikeHumid');
+  btn.classList.add('loading');
+  setTimeout(() => btn.classList.remove('loading'), 500);
+  publishMsg(TOPICS.humidity, { sensor: 'humidity', value: 95.0, unit: '%' });
+}
+
+function addWeight() {
+  const btn = document.getElementById('btnAddWeight');
+  btn.classList.add('loading');
+  setTimeout(() => btn.classList.remove('loading'), 500);
+  currentWeight += 5;
+  publishMsg(TOPICS.weight, { sensor: 'weight', value: +currentWeight.toFixed(2), unit: 'kg' });
+}
+
+function triggerSwarm() {
+  const btn = document.getElementById('btnSwarm');
+  btn.classList.add('loading');
+  setTimeout(() => btn.classList.remove('loading'), 800);
+  publishMsg(TOPICS.temperature, { sensor: 'temperature', value: 43.5, unit: '°C' });
+  publishMsg(TOPICS.humidity, { sensor: 'humidity', value: 92.0, unit: '%' });
+  const swarmWeight = Math.max(15, currentWeight - 12);
+  publishMsg(TOPICS.weight, { sensor: 'weight', value: +swarmWeight.toFixed(2), unit: 'kg' });
+  currentWeight = swarmWeight;
+  gpsLat += .001; gpsLon += .001;
+  publishMsg(TOPICS.gps, { sensor: 'gps', lat: +gpsLat.toFixed(6), lon: +gpsLon.toFixed(6) });
+  addAlert('swarm', 'SWARM ALERT TRIGGERED — Anomaly across all sensors!');
+}
+
+/* ── BOOT ───────────────────────────────────── */
+mqttConnect();
+setTimeout(() => map.invalidateSize(), 500);
+</script>
+</body>
+</html>
