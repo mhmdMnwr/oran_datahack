@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐝 Smart Hive Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f0f0f;--bg2:#1a1a1a;--bg3:#222;--bg4:#2e2e2e;--bg5:#383838;
+--amber:#f5a623;--amber-glow:#f5a62333;--amber-dim:#a06a10;
+--red:#ff4d4d;--yellow:#ffd93d;--green:#4caf50;--cyan:#00bcd4;--purple:#bb86fc;
+--text:#d4d4d4;--text-dim:#777;--text-bright:#f0f0f0;
+--radius:14px;--font-mono:'JetBrains Mono',monospace;--font-sans:'Inter',sans-serif}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;opacity:.025;z-index:0;pointer-events:none;
+background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100' viewBox='0 0 56 100'%3E%3Cpath d='M28 66L0 50V16L28 0l28 16v34L28 66zm0 34L0 84V50l28-16 28 16v34L28 100z' fill='%23f5a623' fill-opacity='0.3'/%3E%3C/svg%3E")}
+.app{position:relative;z-index:1;max-width:1440px;margin:0 auto;padding:20px}
+header{display:flex;align-items:center;justify-content:space-between;padding:18px 28px;background:linear-gradient(135deg,var(--bg2),var(--bg3));border:1px solid var(--bg4);border-radius:var(--radius);margin-bottom:20px;position:relative;overflow:hidden}
+header::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--amber),transparent)}
+.logo{display:flex;align-items:center;gap:14px}
+.logo-icon{font-size:2.2rem}.logo h1{font-family:var(--font-mono);font-size:1.3rem;color:var(--amber);text-transform:uppercase;letter-spacing:3px}
+.logo span{font-size:.72rem;color:var(--text-dim);letter-spacing:1.5px;display:block;margin-top:2px}
+.header-right{display:flex;align-items:center;gap:16px}
+#connStatus{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:.8rem;padding:8px 16px;border-radius:20px;background:var(--bg);border:1px solid var(--bg4)}
+#connDot{width:10px;height:10px;border-radius:50%;background:var(--red);transition:all .4s;box-shadow:0 0 6px var(--red)}
+#connDot.on{background:var(--green);box-shadow:0 0 10px var(--green)}
+#hiveSelect{font-family:var(--font-mono);font-size:.78rem;padding:8px 14px;border-radius:10px;background:var(--bg3);border:1px solid var(--bg5);color:var(--text-bright);outline:none;cursor:pointer;transition:border-color .2s}
+#hiveSelect:focus{border-color:var(--amber)}
+#scenarioBadge{font-family:var(--font-mono);font-size:.72rem;padding:6px 14px;border-radius:20px;background:var(--green);color:#000;font-weight:700;letter-spacing:1px;text-transform:uppercase;transition:all .4s}
+#scenarioBadge.warning{background:var(--yellow);color:#000}
+#scenarioBadge.critical{background:var(--red);color:#fff;animation:pulse-badge 1.5s infinite}
+@keyframes pulse-badge{0%,100%{opacity:1}50%{opacity:.7}}
+.grid{display:grid;grid-template-columns:300px 1fr;grid-template-rows:auto auto auto auto;gap:16px}
+.cards-col{display:flex;flex-direction:column;gap:14px}
+.sensor-card{background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius);padding:18px;position:relative;overflow:hidden;transition:border-color .3s,box-shadow .3s}
+.sensor-card:hover{border-color:var(--amber-dim);box-shadow:0 0 24px var(--amber-glow)}
+.sensor-card::before{content:'';position:absolute;top:0;left:0;width:4px;height:100%;border-radius:2px}
+.sensor-card .label{font-size:.68rem;text-transform:uppercase;letter-spacing:2.5px;color:var(--text-dim);margin-bottom:6px;padding-left:14px;font-weight:600}
+.sensor-card .value{font-family:var(--font-mono);font-size:2rem;font-weight:800;color:var(--text-bright);padding-left:14px}
+.sensor-card .unit{font-size:.85rem;color:var(--amber);margin-left:4px;font-weight:600}
+.sensor-card .meta{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-left:14px;font-size:.68rem;color:var(--text-dim)}
+.badge{padding:3px 10px;border-radius:12px;font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1.2px}
+.badge.normal{background:#4caf5018;color:var(--green);border:1px solid #4caf5040}
+.badge.warning{background:#ffd93d18;color:var(--yellow);border:1px solid #ffd93d40}
+.badge.alert{background:#ff4d4d18;color:var(--red);border:1px solid #ff4d4d40}
+.sensor-card.temp::before{background:linear-gradient(180deg,#ff6b35,#ff3d00)}
+.sensor-card.humid::before{background:linear-gradient(180deg,var(--cyan),#00838f)}
+.sensor-card.weight::before{background:linear-gradient(180deg,#e8a317,#c68100)}
+.sensor-card.pop::before{background:linear-gradient(180deg,var(--purple),#7c4dff)}
+.chart-panel,.scenario-panel,.audio-panel,.alert-panel{background:var(--bg2);border:1px solid var(--bg4);border-radius:var(--radius);padding:20px}
+.scenario-panel,.audio-panel,.alert-panel{grid-column:1/-1}
+.panel-title{font-family:var(--font-mono);font-size:.78rem;text-transform:uppercase;letter-spacing:2.5px;color:var(--amber);margin-bottom:14px;font-weight:700}
+.panel-desc{font-size:.75rem;color:var(--text-dim);margin-bottom:16px}
+#liveChart{width:100%!important;max-height:280px}
+.scenario-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.scenario-btn{padding:20px;border-radius:12px;border:2px solid var(--bg5);background:var(--bg3);cursor:pointer;transition:all .25s;text-align:left;position:relative}
+.scenario-btn:hover{border-color:var(--amber-dim);box-shadow:0 0 20px var(--amber-glow);transform:translateY(-2px)}
+.scenario-btn.active{border-color:var(--green);box-shadow:0 0 18px #4caf5030}
+.scenario-btn.active.warning-s{border-color:var(--yellow);box-shadow:0 0 18px #ffd93d30}
+.scenario-btn.active.critical-s{border-color:var(--red);box-shadow:0 0 18px #ff4d4d30}
+.scenario-btn .s-icon{font-size:1.6rem;margin-bottom:8px;display:block}
+.scenario-btn .s-name{font-family:var(--font-mono);font-size:.9rem;font-weight:700;color:var(--text-bright);margin-bottom:4px}
+.scenario-btn .s-desc{font-size:.7rem;color:var(--text-dim);line-height:1.4}
+.scenario-btn .s-level{position:absolute;top:12px;right:12px;font-size:.6rem;font-weight:700;padding:3px 8px;border-radius:8px;text-transform:uppercase;letter-spacing:1px}
+/* Audio panel */
+.audio-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:16px}
+.audio-card{background:var(--bg3);border:1px solid var(--bg5);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px;transition:all .2s}
+.audio-card:hover{border-color:var(--amber-dim);box-shadow:0 0 16px var(--amber-glow)}
+.audio-card .a-name{font-family:var(--font-mono);font-size:.85rem;font-weight:700;color:var(--text-bright)}
+.audio-card .a-meta{font-size:.68rem;color:var(--text-dim)}
+.audio-card .a-send{font-family:var(--font-mono);font-size:.75rem;padding:8px 14px;border:1px solid var(--green);border-radius:8px;background:transparent;color:var(--green);cursor:pointer;transition:all .2s;font-weight:600}
+.audio-card .a-send:hover{background:#4caf5020;box-shadow:0 0 12px #4caf5030}
+.audio-card .a-send:disabled{opacity:.4;cursor:not-allowed}
+.audio-card .a-send.sending{border-color:var(--yellow);color:var(--yellow)}
+.topic-row{display:flex;gap:10px;align-items:center}
+.topic-input{flex:1;font-family:var(--font-mono);font-size:.78rem;padding:10px 14px;border:1px solid var(--bg5);border-radius:8px;background:var(--bg3);color:var(--text-bright);outline:none;transition:border-color .2s}
+.topic-input:focus{border-color:var(--amber)}
+.topic-label{font-size:.7rem;color:var(--text-dim);margin-bottom:8px}
+/* Alerts */
+.alert-panel{max-height:240px;display:flex;flex-direction:column}
+#alertLog{flex:1;overflow-y:auto;font-family:var(--font-mono);font-size:.72rem;scrollbar-width:thin;scrollbar-color:var(--bg4) transparent}
+.alert-entry{padding:8px 12px;border-left:3px solid var(--amber);margin-bottom:5px;background:var(--bg3);border-radius:0 8px 8px 0;animation:slideIn .3s ease}
+.alert-entry.level-alert{border-left-color:var(--red);background:#ff4d4d08}
+.alert-entry.level-warning{border-left-color:var(--yellow);background:#ffd93d08}
+.alert-entry .time{color:var(--text-dim);margin-right:8px}.alert-entry .msg{color:var(--text-bright)}
+@keyframes slideIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
+.footer{text-align:center;padding:16px;font-size:.65rem;color:var(--text-dim);letter-spacing:1px;margin-top:8px}
+@media(max-width:860px){.grid{grid-template-columns:1fr}.cards-col{flex-direction:row;flex-wrap:wrap}.sensor-card{flex:1;min-width:160px}.scenario-grid{grid-template-columns:1fr}.audio-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+<div class="logo"><div class="logo-icon">🐝</div><div><h1>Smart Hive Monitor</h1><span>IoT Telemetry Dashboard v2.0</span></div></div>
+<div class="header-right">
+<select id="hiveSelect" onchange="switchHive(this.value)"></select>
+<span id="scenarioBadge">Normal</span>
+<div id="connStatus"><div id="connDot"></div><span id="connLabel">Connecting…</span></div>
+</div>
+</header>
+<div class="grid">
+<div class="cards-col">
+<div class="sensor-card temp" id="cardTemp"><div class="label">🌡️ Temperature</div><div class="value"><span id="valTemp">--</span><span class="unit">°C</span></div><div class="meta"><span id="timeTemp">--:--:--</span><span class="badge normal" id="badgeTemp">Normal</span></div></div>
+<div class="sensor-card humid" id="cardHumid"><div class="label">💧 Humidity</div><div class="value"><span id="valHumid">--</span><span class="unit">%</span></div><div class="meta"><span id="timeHumid">--:--:--</span><span class="badge normal" id="badgeHumid">Normal</span></div></div>
+<div class="sensor-card weight" id="cardWeight"><div class="label">⚖️ Weight</div><div class="value"><span id="valWeight">--</span><span class="unit">kg</span></div><div class="meta"><span id="timeWeight">--:--:--</span><span class="badge normal" id="badgeWeight">Normal</span></div></div>
+<div class="sensor-card pop" id="cardPop"><div class="label">🐝 Population</div><div class="value"><span id="valPop">--</span><span class="unit">bees</span></div><div class="meta"><span id="timePop">--:--:--</span><span class="badge normal" id="badgePop">Normal</span></div></div>
+</div>
+<div class="chart-panel"><div class="panel-title">📈 Live Telemetry — Temperature &amp; Humidity</div><canvas id="liveChart"></canvas></div>
+
+<div class="scenario-panel"><div class="panel-title">🎛️ Behavior Scenarios</div>
+<div class="panel-desc">Select a hive behavior scenario. The simulation will adjust sensor telemetry and publish to MQTT accordingly.</div>
+<div class="scenario-grid" id="scenarioGrid"></div></div>
+
+<div class="audio-panel"><div class="panel-title">🔊 Audio Injection (MQTT)</div>
+<div class="panel-desc">Send raw audio bytes from the sounds folder to any MQTT topic.</div>
+<div class="topic-label">MQTT Topic:</div>
+<div class="topic-row" style="margin-bottom:16px">
+<input type="text" id="audioTopic" class="topic-input" value="audioSensorData/00:1A:7D:DA:71:13" placeholder="Enter MQTT topic...">
+</div>
+<div class="audio-grid" id="audioGrid"><div style="color:var(--text-dim);text-align:center;padding:20px">Loading sounds…</div></div>
+</div>
+
+<div class="alert-panel"><div class="panel-title">🔔 Alert Log</div>
+<div id="alertLog"><div style="color:var(--text-dim);text-align:center;padding:24px">Waiting for data…</div></div></div>
+</div>
+<div class="footer">Smart Hive IoT Monitor · Powered by Flask + MQTT + Chart.js</div>
+</div>
+
+<script>
+const API_BASE='',POLL_INTERVAL=2000;
+let activeScenario='normal',chart=null,selectedHive='';
+const SICONS={normal:'🟢',swarm:'🚨',queen_absent:'⚠️'};
+
+async function loadHives(){
+  try{const r=await fetch(`${API_BASE}/api/hives`);const hives=await r.json();const sel=document.getElementById('hiveSelect');sel.innerHTML='';
+  hives.forEach((h,i)=>{const o=document.createElement('option');o.value=h;o.textContent=`🐝 Hive ${h.slice(-2)}`;sel.appendChild(o);});
+  selectedHive=hives[0];sel.value=selectedHive;}catch(e){console.error(e)}
+}
+function switchHive(id){selectedHive=id;lastAC=0;}
+
+function initChart(){
+  const ctx=document.getElementById('liveChart').getContext('2d');
+  chart=new Chart(ctx,{type:'line',data:{labels:[],datasets:[
+    {label:'Temperature (°C)',data:[],borderColor:'#ff6b35',backgroundColor:'#ff6b3518',yAxisID:'y',tension:.35,pointRadius:2,borderWidth:2.5,fill:true},
+    {label:'Humidity (%)',data:[],borderColor:'#00bcd4',backgroundColor:'#00bcd418',yAxisID:'y1',tension:.35,pointRadius:2,borderWidth:2.5,fill:true}
+  ]},options:{responsive:true,animation:{duration:400},
+    plugins:{legend:{labels:{color:'#777',font:{family:'JetBrains Mono',size:11},boxWidth:12,padding:20}}},
+    scales:{x:{ticks:{color:'#555',maxRotation:0,maxTicksLimit:8,font:{size:10,family:'JetBrains Mono'}},grid:{color:'#222'}},
+      y:{type:'linear',position:'left',min:25,max:48,ticks:{color:'#ff6b35',font:{size:10}},grid:{color:'#1e1e1e'},title:{display:true,text:'°C',color:'#ff6b35'}},
+      y1:{type:'linear',position:'right',min:30,max:100,ticks:{color:'#00bcd4',font:{size:10}},grid:{drawOnChartArea:false},title:{display:true,text:'%',color:'#00bcd4'}}}}});
+}
+
+async function loadScenarios(){
+  try{const r=await fetch(`${API_BASE}/api/scenarios`);const s=await r.json();const g=document.getElementById('scenarioGrid');g.innerHTML='';
+  s.forEach(sc=>{const b=document.createElement('button');
+    const lvl=sc.alert_level==='critical'?'critical-s':sc.alert_level==='warning'?'warning-s':'';
+    b.className=`scenario-btn ${sc.name===activeScenario?'active ':''} ${sc.name===activeScenario?lvl:''}`;
+    b.id=`scenario-${sc.name}`;b.onclick=()=>setScenario(sc.name);
+    b.innerHTML=`<span class="s-icon">${SICONS[sc.name]||'📊'}</span><div class="s-name">${sc.display_name}</div><div class="s-desc">${sc.description}</div><span class="s-level badge ${sc.alert_level}">${sc.alert_level}</span>`;
+    g.appendChild(b);})}catch(e){console.error(e)}
+}
+
+async function setScenario(name){
+  try{const r=await fetch(`${API_BASE}/api/scenario`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario:name,hive_id:selectedHive})});
+  const res=await r.json();if(res.status==='ok'){activeScenario=name;updateBadgeHeader(res.display_name,res.alert_level);updateScenarioButtons();}}catch(e){console.error(e)}
+}
+
+function updateBadgeHeader(n,l){const b=document.getElementById('scenarioBadge');b.textContent=n;b.className=l==='critical'?'critical':l==='warning'?'warning':'';}
+function updateScenarioButtons(){document.querySelectorAll('.scenario-btn').forEach(b=>{const n=b.id.replace('scenario-','');b.classList.toggle('active',n===activeScenario);});}
+
+async function loadSounds(){
+  try{const r=await fetch(`${API_BASE}/api/sounds`);const sounds=await r.json();const g=document.getElementById('audioGrid');g.innerHTML='';
+  if(sounds.length===0){g.innerHTML='<div style="color:var(--text-dim);padding:20px;text-align:center">No sound files found</div>';return;}
+  sounds.forEach(s=>{const c=document.createElement('div');c.className='audio-card';
+    const nameDiv=document.createElement('div');nameDiv.className='a-name';nameDiv.textContent='🎵 '+s.filename;
+    const metaDiv=document.createElement('div');metaDiv.className='a-meta';metaDiv.textContent=s.size_kb+' KB · '+s.duration_s+'s · '+s.sample_rate+' Hz';
+    const btn=document.createElement('button');btn.className='a-send';btn.textContent='📤 Send to MQTT';
+    btn.addEventListener('click',function(){sendAudio(s.filename,this);});
+    c.appendChild(nameDiv);c.appendChild(metaDiv);c.appendChild(btn);
+    g.appendChild(c);})}catch(e){console.error(e);document.getElementById('audioGrid').innerHTML='<div style="color:var(--red);padding:20px">Failed to load sounds</div>';}
+}
+
+async function sendAudio(filename,btn){
+  const topic=document.getElementById('audioTopic').value;
+  if(!topic){alert('Please enter an MQTT topic');return;}
+  btn.disabled=true;btn.classList.add('sending');btn.textContent='⏳ Sending...';
+  try{const r=await fetch(`${API_BASE}/api/send-audio`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename,topic})});
+  const res=await r.json();if(res.status==='ok'){btn.textContent=`✅ Sent ${(res.bytes_sent/1024).toFixed(0)} KB`;setTimeout(()=>{btn.textContent='📤 Send to MQTT';btn.classList.remove('sending');btn.disabled=false;},2000);
+  }else{btn.textContent='❌ Failed';setTimeout(()=>{btn.textContent='📤 Send to MQTT';btn.classList.remove('sending');btn.disabled=false;},2000);}
+  }catch(e){btn.textContent='❌ Error';setTimeout(()=>{btn.textContent='📤 Send to MQTT';btn.classList.remove('sending');btn.disabled=false;},2000);}
+}
+
+async function pollData(){
+  if(!selectedHive)return;
+  try{const r=await fetch(`${API_BASE}/api/data?hive=${encodeURIComponent(selectedHive)}`);const d=await r.json();
+  document.getElementById('connDot').className='on';document.getElementById('connLabel').textContent='Connected';
+  if(d.temperature){document.getElementById('valTemp').textContent=d.temperature.value;document.getElementById('timeTemp').textContent=d.temperature.timestamp;
+    const a=d.temperature.value>40;updBadge('badgeTemp',a?'alert':'normal',a?'Alert':'Normal');pulse('cardTemp');}
+  if(d.humidity){document.getElementById('valHumid').textContent=d.humidity.value;document.getElementById('timeHumid').textContent=d.humidity.timestamp;
+    const a=d.humidity.value>85;updBadge('badgeHumid',a?'warning':'normal',a?'Warning':'Normal');pulse('cardHumid');}
+  if(d.weight){document.getElementById('valWeight').textContent=d.weight.value;document.getElementById('timeWeight').textContent=d.weight.timestamp;
+    updBadge('badgeWeight',d.weight.value<20?'warning':'normal',d.weight.value<20?'Low':'Normal');pulse('cardWeight');}
+  if(d.population){document.getElementById('valPop').textContent=d.population.value.toLocaleString();document.getElementById('timePop').textContent=d.population.timestamp;
+    const lo=d.population.value<25000;updBadge('badgePop',lo?'warning':'normal',lo?'Low':'Healthy');pulse('cardPop');}
+  if(d.scenario){activeScenario=d.scenario;updateBadgeHeader(d.scenario_display||d.scenario,d.alert_level||'normal');updateScenarioButtons();}
+  if(d.chart&&chart){chart.data.labels=d.chart.labels;chart.data.datasets[0].data=d.chart.temperature;chart.data.datasets[1].data=d.chart.humidity;chart.update('none');}
+  if(d.alerts&&d.alerts.length>0)renderAlerts(d.alerts);
+  }catch(e){document.getElementById('connDot').className='';document.getElementById('connLabel').textContent='Disconnected';}
+}
+
+function updBadge(id,l,t){const e=document.getElementById(id);e.className='badge '+l;e.textContent=t;}
+function pulse(id){const e=document.getElementById(id);e.style.boxShadow='0 0 24px var(--amber-glow)';setTimeout(()=>e.style.boxShadow='',500);}
+let lastAC=0;
+function renderAlerts(a){if(a.length===lastAC)return;lastAC=a.length;const l=document.getElementById('alertLog');l.innerHTML='';
+a.forEach(x=>{const e=document.createElement('div');e.className='alert-entry level-'+x.level;
+e.innerHTML=`<span class="time">${x.timestamp}</span> ${x.level==='alert'?'🔴':'🟡'} <span class="msg">${x.message}</span>`;l.appendChild(e);});}
+
+async function boot(){await loadHives();initChart();await loadScenarios();await loadSounds();pollData();setInterval(pollData,POLL_INTERVAL);}
+boot();
+</script>
+</body>
+</html>

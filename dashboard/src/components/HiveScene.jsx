@@ -132,11 +132,11 @@ export default function HiveScene({ hives, selectedId, onSelect, onNavigate, sho
       {/* Environment for reflections */}
       <Environment preset="sunset" environmentIntensity={0.3} />
 
-      <PerspectiveCamera makeDefault fov={50} position={[0, 8, 16]} />
+      <PerspectiveCamera makeDefault fov={50} position={[0, 8, 16]} near={0.1} far={200} />
       <OrbitControls
         enableDamping dampingFactor={0.06}
-        minDistance={6} maxDistance={35}
-        maxPolarAngle={Math.PI * 0.8} minPolarAngle={Math.PI * 0.1}
+        minDistance={4} maxDistance={50}
+        maxPolarAngle={Math.PI * 0.85} minPolarAngle={Math.PI * 0.05}
         target={[0, 0.5, 2]}
       />
 
@@ -146,8 +146,9 @@ export default function HiveScene({ hives, selectedId, onSelect, onNavigate, sho
       {/* Key light */}
       <directionalLight position={[10, 14, 8]} intensity={2.2} color="#FFE4B5"
         castShadow shadow-mapSize={2048}
-        shadow-camera-left={-15} shadow-camera-right={15}
-        shadow-camera-top={10} shadow-camera-bottom={-10} />
+        shadow-camera-left={-20} shadow-camera-right={20}
+        shadow-camera-top={20} shadow-camera-bottom={-20}
+        shadow-camera-near={0.1} shadow-camera-far={80} />
 
       {/* Fill light */}
       <directionalLight position={[-8, 8, -4]} intensity={1.0} color="#FFD5A0" />
