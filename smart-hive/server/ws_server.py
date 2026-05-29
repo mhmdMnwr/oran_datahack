@@ -15,14 +15,19 @@ import asyncio
 import json
 import logging
 import os
+import wave
+import numpy as np
 from pathlib import Path
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
 
 from behavior_simulator import BehaviorSimulator
 from behaviors import BEHAVIOR_REGISTRY
+from broker import BrokerClient
+
+MAC_ADDRESS = "00:1A:7D:DA:71:13"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,9 +50,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Global simulator (shared across WS connections) ──────
+# ─── Global simulator & MQTT ──────────────────────────────
 simulator = BehaviorSimulator()
 PUBLISH_INTERVAL = 2  # seconds between telemetry pushes
+mqtt_client = BrokerClient(client_id_suffix="behavior-publisher")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Start the global MQTT publishing loop."""
+    import asyncio
+    
+    if not mqtt_client.connected:
+        mqtt_client.connect()
+
+    async def _publish_loop():
+        while True:
+            try:
+                data = simulator.generate_all()
+                # MQTT Push
+                mqtt_client.publish(f"temperatureData/{MAC_ADDRESS}", {"value": data["temperature"]["value"]})
+                mqtt_client.publish(f"humidityData/{MAC_ADDRESS}", {"value": data["humidity"]["value"]})
+                mqtt_client.publish(f"weightData/{MAC_ADDRESS}", {"value": data["weight"]["value"]})
+                mqtt_client.publish(f"populationData/{MAC_ADDRESS}", {"value": data["population"]["value"]})
+
+                # Read a snippet of audio to send
+                sound_file = SOUNDS_DIR / simulator._behavior.sound_file
+                if sound_file.exists():
+                    with wave.open(str(sound_file), 'rb') as wf:
+                        frames = wf.readframes(1000)
+                        audio_array = np.frombuffer(frames, dtype=np.int16)
+                        audio_floats = (audio_array / 32768.0).tolist()
+                        mqtt_client.publish(f"audioSensorData/{MAC_ADDRESS}", {"value": audio_floats})
+                        
+            except Exception as e:
+                logger.error(f"MQTT publish error: {e}")
+                
+            await asyncio.sleep(PUBLISH_INTERVAL)
+
+    asyncio.create_task(_publish_loop())
 
 
 # ─── REST Endpoints ──────────────────────────────────────
@@ -71,6 +112,53 @@ async def list_behaviors():
             "sound_file": profile.sound_file,
         })
     return JSONResponse(content=result)
+
+
+class BehaviorUpdate(BaseModel):
+    hiveId: str
+    behavior: str
+
+
+@app.post("/behavior")
+async def set_behavior(update: BehaviorUpdate):
+    """Set the behavior of the simulator."""
+    try:
+        meta = simulator.set_behavior(update.behavior)
+        logger.info("🔄 Behavior changed via HTTP → %s (hive: %s)", update.behavior, update.hiveId)
+        return JSONResponse(content={"status": "success", "hiveId": update.hiveId, **meta})
+    except ValueError as ve:
+        return JSONResponse(status_code=400, content={"error": str(ve)})
+
+
+class AudioInjectRequest(BaseModel):
+    behavior: str
+    topic: str
+
+@app.post("/inject-audio")
+async def inject_audio(req: AudioInjectRequest):
+    """Send raw audio bytes to a specified MQTT topic."""
+    profile = BEHAVIOR_REGISTRY.get(req.behavior)
+    if not profile:
+        return JSONResponse(status_code=400, content={"error": "Unknown behavior"})
+    
+    sound_file = SOUNDS_DIR / profile.sound_file
+    if not sound_file.exists():
+        return JSONResponse(status_code=404, content={"error": "Sound file not found"})
+    
+    try:
+        with wave.open(str(sound_file), 'rb') as wf:
+            frames = wf.readframes(wf.getnframes())
+            audio_array = np.frombuffer(frames, dtype=np.int16)
+            payload = audio_array.tobytes()
+            
+            # Send raw bytes using the underlying paho client
+            mqtt_client._client.publish(req.topic, payload, qos=0)
+            
+        logger.info(f"📤 Injected {len(payload)} raw bytes of {profile.sound_file} to {req.topic}")
+        return {"status": "success", "topic": req.topic, "bytes_sent": len(payload)}
+    except Exception as e:
+        logger.error(f"Failed to inject audio: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.get("/sounds/{filename}")
@@ -114,7 +202,7 @@ async def websocket_endpoint(ws: WebSocket):
     await ws.send_json(initial)
 
     async def _send_telemetry():
-        """Push telemetry at fixed intervals."""
+        """Push telemetry to WS at fixed intervals."""
         while True:
             try:
                 data = simulator.generate_all()
@@ -214,6 +302,6 @@ if __name__ == "__main__":
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=8765,
+        port=8001,
         log_level="info",
     )

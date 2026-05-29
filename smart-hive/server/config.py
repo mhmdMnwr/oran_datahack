@@ -8,7 +8,7 @@ sensor ranges, and alert thresholds used across all server modules.
 # ──────────────────────────────────────────────
 # MQTT Broker Configuration
 # ──────────────────────────────────────────────
-BROKER_HOST: str = "broker.hivemq.com"
+BROKER_HOST: str = "localhost"
 BROKER_PORT: int = 1883
 BROKER_KEEPALIVE: int = 60
 CLIENT_ID_PREFIX: str = "smart-hive"

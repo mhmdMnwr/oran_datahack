@@ -2,6 +2,7 @@ import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import HoneyFill from './HoneyFill';
+import AnimatedBees from './AnimatedBees';
 
 const RADIUS = 1.2;
 const HEIGHT = 3.0;
@@ -12,7 +13,7 @@ const INNER_R = RADIUS - WALL;
  * SingleHive — One hexagonal hive (no cap).
  * When hasProblem=true, the hive pulses red like a warning light.
  */
-export default function SingleHive({ fillLevel = 0.65, temperature = 35, selected = false, hasProblem = false }) {
+export default function SingleHive({ fillLevel = 0.65, temperature = 35, selected = false, hasProblem = false, beeCount = 12 }) {
   const glowRef = useRef();
   const alertRef = useRef();
   const shellRef = useRef();
@@ -195,6 +196,9 @@ export default function SingleHive({ fillLevel = 0.65, temperature = 35, selecte
         <pointLight ref={alertRef} position={[0, 0.5, 0]}
           color="#FF0000" intensity={0} distance={5} decay={2} />
       )}
+
+      {/* Animated bees flying in and out */}
+      <AnimatedBees beeCount={beeCount} hiveRadius={RADIUS} hiveHeight={HEIGHT} />
     </group>
   );
 }

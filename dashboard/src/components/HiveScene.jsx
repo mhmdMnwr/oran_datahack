@@ -119,7 +119,7 @@ function DirtPath() {
   );
 }
 
-export default function HiveScene({ selectedId, onSelect, overrides, showProblemsOnly }) {
+export default function HiveScene({ hives, selectedId, onSelect, onNavigate, showProblemsOnly }) {
   return (
     <Canvas
       shadows
@@ -163,7 +163,7 @@ export default function HiveScene({ selectedId, onSelect, overrides, showProblem
         intensity={1.2} color="#FFF3E0" castShadow />
 
       {/* Farm */}
-      <HiveFarm selectedId={selectedId} onSelect={onSelect} overrides={overrides}
+      <HiveFarm hives={hives} selectedId={selectedId} onSelect={onSelect} onNavigate={onNavigate}
         showProblemsOnly={showProblemsOnly} />
 
       {/* Ground */}

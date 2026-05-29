@@ -1,29 +1,26 @@
 import React, { useMemo } from 'react';
 import { Html } from '@react-three/drei';
 import SingleHive from './SingleHive';
-import { HIVE_DATA, isProblematic } from '../data/hives';
+import { isProblematic } from '../data/hives';
 
 const COL_SPACING = 3.6;
 const ROW_SPACING = 4.2;
 
 /**
- * HiveFarm — 10 hives with warning triangles and filter support.
- *
- * @param {number|null} selectedId
- * @param {function} onSelect
- * @param {object} overrides — { [id]: { fill, temp } }
- * @param {boolean} showProblemsOnly — dim healthy hives
+ * HiveFarm — Renders hives in a 3D grid.
+ * `hives` is now passed as a prop (fetched from API).
  */
-export default function HiveFarm({ selectedId, onSelect, overrides = {}, showProblemsOnly = false }) {
+export default function HiveFarm({ hives = [], selectedId, onSelect, onNavigate, showProblemsOnly = false }) {
   const positions = useMemo(() => {
-    return HIVE_DATA.map((hive, i) => {
-      const row = i < 5 ? 0 : 1;
-      const col = i < 5 ? i : i - 5;
-      const x = (col - 2) * COL_SPACING + (row === 1 ? COL_SPACING * 0.5 : 0);
+    return hives.map((hive, i) => {
+      const cols = Math.min(hives.length, 5);
+      const row = Math.floor(i / 5);
+      const col = i % 5;
+      const x = (col - (cols - 1) / 2) * COL_SPACING + (row % 2 === 1 ? COL_SPACING * 0.5 : 0);
       const z = row * ROW_SPACING;
       return { ...hive, x, z };
     });
-  }, []);
+  }, [hives]);
 
   const getStatus = (fill) => {
     if (fill >= 0.85) return { label: 'FULL', bg: 'bg-emerald-500/20', border: 'border-emerald-500/40', text: 'text-emerald-400' };
@@ -35,13 +32,15 @@ export default function HiveFarm({ selectedId, onSelect, overrides = {}, showPro
   return (
     <group>
       {positions.map((hive) => {
-        const data = overrides[hive.id] || {};
-        const fill = data.fill ?? hive.fill;
-        const temp = data.temp ?? hive.temp;
+        const fill = hive.fill ?? 0;
+        const temp = hive.temp ?? 0;
+        // Scale population to a reasonable 3D bee count (1-30 range for performance)
+        const population = hive.population ?? 0;
+        const beeCount = Math.max(1, Math.min(30, Math.round(population / 300)));
         const pct = Math.round(fill * 100);
         const status = getStatus(fill);
         const isSelected = selectedId === hive.id;
-        const hasProblem = isProblematic(fill);
+        const hasProblem = isProblematic(hive);
 
         // Hide healthy hives when filter is active
         if (showProblemsOnly && !hasProblem) return null;
@@ -51,7 +50,11 @@ export default function HiveFarm({ selectedId, onSelect, overrides = {}, showPro
 
             {/* Click target */}
             <mesh position={[0, 0.5, 0]}
-              onClick={(e) => { e.stopPropagation(); onSelect?.(hive.id); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (e.detail === 2) { onNavigate?.(hive.id); } // double-click navigates
+                else { onSelect?.(hive.id); } // single-click selects
+              }}
               onPointerOver={() => { document.body.style.cursor = 'pointer'; }}
               onPointerOut={() => { document.body.style.cursor = 'auto'; }}>
               <boxGeometry args={[2.8, 3.8, 2.8]} />
@@ -59,8 +62,7 @@ export default function HiveFarm({ selectedId, onSelect, overrides = {}, showPro
             </mesh>
 
             <SingleHive fillLevel={fill} temperature={temp} selected={isSelected}
-              hasProblem={hasProblem} />
-
+              hasProblem={hasProblem} beeCount={beeCount} />
 
             {/* Percentage label */}
             <Html position={[0, 2.2, 0]} center distanceFactor={12}
@@ -68,7 +70,7 @@ export default function HiveFarm({ selectedId, onSelect, overrides = {}, showPro
               <div className="flex flex-col items-center gap-1">
                 <div className={`text-[11px] font-bold tabular-nums px-2.5 py-1 rounded-lg border backdrop-blur-md
                   ${status.bg} ${status.border} ${status.text}`}>
-                  {pct}%
+                  🐝 {population.toLocaleString()}
                 </div>
                 <div className="text-[9px] font-semibold tracking-wider text-amber-300/60 uppercase">
                   {hive.name}

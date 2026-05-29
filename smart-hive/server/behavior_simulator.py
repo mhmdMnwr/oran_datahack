@@ -35,6 +35,7 @@ class BehaviorSimulator:
         self._temp_value: float = 0.0
         self._humidity_value: float = 0.0
         self._weight_value: float = 0.0
+        self._population_value: float = 0.0
 
         self.set_behavior(DEFAULT_BEHAVIOR)
 
@@ -69,6 +70,9 @@ class BehaviorSimulator:
 
         w = profile.weight
         self._weight_value = (w.min + w.max) / 2 + random.uniform(-2, 2)
+
+        pop = profile.population
+        self._population_value = (pop.min + pop.max) / 2 + random.uniform(-500, 500)
 
         return {
             "behavior": profile.name,
@@ -112,6 +116,14 @@ class BehaviorSimulator:
             self._weight_value + random.gauss(0, w.noise_std), 2
         )
 
+        # Population
+        pop = p.population
+        self._population_value += pop.trend + random.gauss(0, 10)
+        self._population_value = max(pop.min, min(pop.max, self._population_value))
+        population_reading = int(
+            self._population_value + random.gauss(0, pop.noise_std)
+        )
+
         # GPS (behavior-independent)
         self._gps_lat += random.uniform(-GPS_DRIFT_RANGE, GPS_DRIFT_RANGE)
         self._gps_lon += random.uniform(-GPS_DRIFT_RANGE, GPS_DRIFT_RANGE)
@@ -130,6 +142,10 @@ class BehaviorSimulator:
             "weight": {
                 "value": weight_reading,
                 "unit": w.unit,
+            },
+            "population": {
+                "value": population_reading,
+                "unit": pop.unit,
             },
             "gps": {
                 "lat": round(self._gps_lat, 6),

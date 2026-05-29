@@ -33,6 +33,7 @@ class BehaviorProfile:
     temperature: SensorProfile
     humidity: SensorProfile
     weight: SensorProfile
+    population: SensorProfile
     sound_file: str  # filename in /sounds directory
     alert_level: str = "normal"  # normal, warning, critical
 
@@ -52,6 +53,9 @@ NORMAL = BehaviorProfile(
     ),
     weight=SensorProfile(
         min=25.0, max=45.0, noise_std=0.1, unit="kg", trend=0.03,
+    ),
+    population=SensorProfile(
+        min=40000, max=60000, noise_std=500, unit="bees", trend=50,
     ),
     sound_file="normal.wav",
     alert_level="normal",
@@ -73,6 +77,9 @@ SWARM = BehaviorProfile(
     weight=SensorProfile(
         min=15.0, max=45.0, noise_std=0.3, unit="kg", trend=-0.4,
     ),
+    population=SensorProfile(
+        min=10000, max=30000, noise_std=1000, unit="bees", trend=-500,
+    ),
     sound_file="swarm.wav",
     alert_level="critical",
 )
@@ -92,6 +99,9 @@ QUEEN_ABSENT = BehaviorProfile(
     ),
     weight=SensorProfile(
         min=18.0, max=40.0, noise_std=0.2, unit="kg", trend=-0.08,
+    ),
+    population=SensorProfile(
+        min=20000, max=40000, noise_std=800, unit="bees", trend=-200,
     ),
     sound_file="queen_absent.wav",
     alert_level="warning",
