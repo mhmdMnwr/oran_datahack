@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Line } from 'react-chartjs-2';
 import { Chart, CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend } from 'chart.js';
 import { fetchHiveDetail, resolveAlert as apiResolveAlert } from '../api/hiveApi';
+import useMqttSensors from '../hooks/useMqttSensors';
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
@@ -83,7 +84,7 @@ function AnalysisChart({ data, labels, label, color, unit, timeLabel }) {
       },
     },
     scales: {
-      x: { 
+      x: {
         display: true,
         ticks: { color: '#8B7D6A', font: { size: 10, family: 'Inter' }, maxTicksLimit: 8 },
         grid: { color: '#2A251E', drawBorder: false },
@@ -210,16 +211,35 @@ export default function HiveDetailPage() {
     await loadHive();
   };
 
+  // MQTT real-time sensor data (temp & humidity only — weight comes from API)
+  const { liveTemp, liveHumid, connected: mqttConnected } = useMqttSensors(id);
+
   // Extract chart data
   const tempHistory = hive?.history?.temperature || [];
   const humidHistory = hive?.history?.humidity || [];
   const weightHistory = hive?.history?.weight || [];
   const popHistory = hive?.history?.population || [];
 
-  // Latest values for gauges (from last data point in history or 0)
-  const latestTemp = tempHistory.length > 0 ? tempHistory[tempHistory.length - 1].value : 0;
-  const latestHumid = humidHistory.length > 0 ? humidHistory[humidHistory.length - 1].value : 0;
-  const latestWeight = weightHistory.length > 0 ? weightHistory[weightHistory.length - 1].value : 0;
+  // Use live MQTT values when available, fall back to last history point
+  const latestTemp = liveTemp ?? (tempHistory.length > 0 ? tempHistory[tempHistory.length - 1].value : 0);
+  const latestHumid = liveHumid ?? (humidHistory.length > 0 ? humidHistory[humidHistory.length - 1].value : 0);
+
+  // Weight gauge: raw API weight + visible jitter to mimic live bee movement
+  const apiWeight = weightHistory.length > 0 ? weightHistory[weightHistory.length - 1].value : 0;
+
+  const [weightJitter, setWeightJitter] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setWeightJitter((prev) => {
+        const noise = (Math.random() - 0.5) * 0.6;  // ±0.3 kg step
+        const reverted = prev * 0.5 + noise;          // mean-revert toward 0
+        return Math.max(-0.5, Math.min(0.5, reverted));
+      });
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const latestWeight = Math.max(0, apiWeight + weightJitter);
 
   const unresolvedAlerts = hive?.alerts.filter((a) => !a.resolved) || [];
 
@@ -263,15 +283,22 @@ export default function HiveDetailPage() {
               <div>
                 <h1 className="text-lg font-bold text-amber-100 tracking-wide">{hive.name}</h1>
                 <p className="text-[10px] text-amber-500/40 tracking-wider">
-                  HIVE {hive.id} · {hive.queenStatus === 'present' ? '👑 QUEEN PRESENT' : '⚠️ QUEEN ABSENT'}
+                  HIVE {hive.id} · {hive.queenStatus === 'present' ? '👑 QUEEN PRESENT' :
+                    hive.queenStatus === 'pending_acceptance' ? '⏳ QUEEN PENDING' : '⚠️ QUEEN ABSENT'}
                 </p>
               </div>
             </div>
+          </div>
+          <div className="flex items-center gap-2">
             {unresolvedAlerts.length > 0 && (
               <span className="flex items-center gap-1.5 text-[10px] font-bold bg-red-500/15 text-red-400 border border-red-500/25 px-2.5 py-1 rounded-full animate-pulse">
                 ⚠️ {unresolvedAlerts.length} ALERT{unresolvedAlerts.length > 1 ? 'S' : ''}
               </span>
             )}
+            <button onClick={() => navigate(`/map?hive=${encodeURIComponent(hive.id)}`)}
+              className="flex items-center gap-1.5 text-[10px] font-semibold px-3 py-1.5 rounded-full border bg-blue-500/10 border-blue-500/25 text-blue-400/80 hover:bg-blue-500/20 hover:text-blue-300 cursor-pointer transition-all">
+              📍 View on Map
+            </button>
           </div>
         </div>
       </header>
@@ -292,7 +319,7 @@ export default function HiveDetailPage() {
                 color="#3B82F6" warningMin={40} warningMax={75} />
             </div>
             <div className="bg-amber-950/20 border border-amber-800/15 rounded-2xl p-5 flex justify-center">
-              <Gauge value={latestWeight} min={0} max={25} unit="kg" label="Weight"
+              <Gauge value={latestWeight} min={0} max={35} unit="kg" label="Weight"
                 color="#10B981" warningMin={5} warningMax={null} />
             </div>
           </div>

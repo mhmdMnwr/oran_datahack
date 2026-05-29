@@ -10,7 +10,7 @@ const ROW_SPACING = 4.2;
  * HiveFarm — Renders hives in a 3D grid.
  * `hives` is now passed as a prop (fetched from API).
  */
-export default function HiveFarm({ hives = [], selectedId, onSelect, onNavigate, showProblemsOnly = false }) {
+export default function HiveFarm({ hives = [], selectedId, onSelect, onNavigate, showProblemsOnly = false, queenFilter = null }) {
   const positions = useMemo(() => {
     return hives.map((hive, i) => {
       const cols = Math.min(hives.length, 5);
@@ -42,8 +42,9 @@ export default function HiveFarm({ hives = [], selectedId, onSelect, onNavigate,
         const isSelected = selectedId === hive.id;
         const hasProblem = isProblematic(hive);
 
-        // Hide healthy hives when filter is active
+        // Hide hives based on active filters
         if (showProblemsOnly && !hasProblem) return null;
+        if (queenFilter && hive.queenStatus !== queenFilter) return null;
 
         return (
           <group key={hive.id} position={[hive.x, 0, hive.z]}>

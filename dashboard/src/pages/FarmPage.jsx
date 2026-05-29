@@ -11,6 +11,7 @@ export default function FarmPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showProblemsOnly, setShowProblemsOnly] = useState(false);
+  const [queenFilter, setQueenFilter] = useState(null); // null | 'pending_acceptance' | 'absent'
 
 
 
@@ -42,6 +43,9 @@ export default function FarmPage() {
 
   const selected = selectedId ? hives.find((h) => h.id === selectedId) : null;
   const problemCount = hives.filter(isProblematic).length;
+  const pendingQueenCount = hives.filter((h) => h.queenStatus === 'pending_acceptance').length;
+  const absentQueenCount = hives.filter((h) => h.queenStatus === 'absent').length;
+  const queenIssueCount = pendingQueenCount + absentQueenCount;
 
   const handleSelect = useCallback((id) => {
     setSelectedId((prev) => (prev === id ? null : id));
@@ -53,7 +57,7 @@ export default function FarmPage() {
       <div className="absolute inset-0">
         <HiveScene hives={hives} selectedId={selectedId} onSelect={handleSelect}
           onNavigate={(id) => navigate(`/hive/${id}`)}
-          showProblemsOnly={showProblemsOnly} />
+          showProblemsOnly={showProblemsOnly} queenFilter={queenFilter} />
       </div>
 
       {/* Loading overlay */}
@@ -113,8 +117,27 @@ export default function FarmPage() {
               </span>
             )}
           </button>
-          {showProblemsOnly && (
-            <button onClick={() => setShowProblemsOnly(false)}
+          <button onClick={() => {
+              if (queenFilter === null) setQueenFilter('pending_acceptance');
+              else if (queenFilter === 'pending_acceptance') setQueenFilter('absent');
+              else setQueenFilter(null);
+            }}
+            className={`flex items-center gap-2 text-xs font-semibold px-4 py-2 rounded-full border backdrop-blur-md transition-all duration-200 cursor-pointer ${
+              queenFilter
+                ? 'bg-purple-500/20 border-purple-500/40 text-purple-300 shadow-[0_0_12px_rgba(168,85,247,0.15)]'
+                : 'bg-amber-950/30 border-amber-700/20 text-amber-300/70 hover:bg-amber-900/30'
+            }`}>
+            <span>👑</span>
+            {queenFilter === 'pending_acceptance' ? 'Pending Queen' :
+             queenFilter === 'absent' ? 'Queen Absent' : 'Queen Filter'}
+            {queenIssueCount > 0 && !queenFilter && (
+              <span className="bg-purple-500/30 text-purple-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                {queenIssueCount}
+              </span>
+            )}
+          </button>
+          {(showProblemsOnly || queenFilter) && (
+            <button onClick={() => { setShowProblemsOnly(false); setQueenFilter(null); }}
               className="text-[10px] text-amber-400/50 hover:text-amber-300 cursor-pointer">
               Show All
             </button>
@@ -164,9 +187,12 @@ export default function FarmPage() {
                 <span className={`font-semibold text-xs px-2 py-0.5 rounded-full border ${
                   selected.queenStatus === 'present'
                     ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+                    : selected.queenStatus === 'pending_acceptance'
+                    ? 'text-purple-400 bg-purple-500/10 border-purple-500/30'
                     : 'text-red-400 bg-red-500/10 border-red-500/30'
                 }`}>
-                  {selected.queenStatus === 'present' ? 'Present' : 'Absent'}
+                  {selected.queenStatus === 'present' ? 'Present' :
+                   selected.queenStatus === 'pending_acceptance' ? 'Pending' : 'Absent'}
                 </span>
               </div>
               <div className="flex justify-between">

@@ -66,6 +66,10 @@ header::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;back
 .scenario-btn .s-level{position:absolute;top:12px;right:12px;font-size:.6rem;font-weight:700;padding:3px 8px;border-radius:8px;text-transform:uppercase;letter-spacing:1px}
 /* Audio panel */
 .audio-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:16px}
+.audio-section{margin-bottom:20px}
+.audio-section-title{font-family:var(--font-mono);font-size:.85rem;font-weight:700;color:var(--text-bright);padding:10px 14px;background:var(--bg3);border:1px solid var(--bg5);border-radius:10px 10px 0 0;text-transform:uppercase;letter-spacing:2px;display:flex;align-items:center;gap:8px}
+.audio-section-title .folder-badge{font-size:.65rem;padding:2px 8px;border-radius:6px;background:var(--amber);color:#000;font-weight:700}
+.audio-section-body{border:1px solid var(--bg5);border-top:none;border-radius:0 0 10px 10px;padding:12px}
 .audio-card{background:var(--bg3);border:1px solid var(--bg5);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:8px;transition:all .2s}
 .audio-card:hover{border-color:var(--amber-dim);box-shadow:0 0 16px var(--amber-glow)}
 .audio-card .a-name{font-family:var(--font-mono);font-size:.85rem;font-weight:700;color:var(--text-bright)}
@@ -105,7 +109,6 @@ header::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;back
 <div class="sensor-card temp" id="cardTemp"><div class="label">🌡️ Temperature</div><div class="value"><span id="valTemp">--</span><span class="unit">°C</span></div><div class="meta"><span id="timeTemp">--:--:--</span><span class="badge normal" id="badgeTemp">Normal</span></div></div>
 <div class="sensor-card humid" id="cardHumid"><div class="label">💧 Humidity</div><div class="value"><span id="valHumid">--</span><span class="unit">%</span></div><div class="meta"><span id="timeHumid">--:--:--</span><span class="badge normal" id="badgeHumid">Normal</span></div></div>
 <div class="sensor-card weight" id="cardWeight"><div class="label">⚖️ Weight</div><div class="value"><span id="valWeight">--</span><span class="unit">kg</span></div><div class="meta"><span id="timeWeight">--:--:--</span><span class="badge normal" id="badgeWeight">Normal</span></div></div>
-<div class="sensor-card pop" id="cardPop"><div class="label">🐝 Population</div><div class="value"><span id="valPop">--</span><span class="unit">bees</span></div><div class="meta"><span id="timePop">--:--:--</span><span class="badge normal" id="badgePop">Normal</span></div></div>
 </div>
 <div class="chart-panel"><div class="panel-title">📈 Live Telemetry — Temperature &amp; Humidity</div><canvas id="liveChart"></canvas></div>
 
@@ -114,12 +117,8 @@ header::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;back
 <div class="scenario-grid" id="scenarioGrid"></div></div>
 
 <div class="audio-panel"><div class="panel-title">🔊 Audio Injection (MQTT)</div>
-<div class="panel-desc">Send raw audio bytes from the sounds folder to any MQTT topic.</div>
-<div class="topic-label">MQTT Topic:</div>
-<div class="topic-row" style="margin-bottom:16px">
-<input type="text" id="audioTopic" class="topic-input" value="audioSensorData/00:1A:7D:DA:71:13" placeholder="Enter MQTT topic...">
-</div>
-<div class="audio-grid" id="audioGrid"><div style="color:var(--text-dim);text-align:center;padding:20px">Loading sounds…</div></div>
+<div class="panel-desc">Send raw audio bytes from sound folders to MQTT. Each section has its own topic.</div>
+<div id="audioGroups"><div style="color:var(--text-dim);text-align:center;padding:20px">Loading sounds…</div></div>
 </div>
 
 <div class="alert-panel"><div class="panel-title">🔔 Alert Log</div>
@@ -170,25 +169,47 @@ async function setScenario(name){
 function updateBadgeHeader(n,l){const b=document.getElementById('scenarioBadge');b.textContent=n;b.className=l==='critical'?'critical':l==='warning'?'warning':'';}
 function updateScenarioButtons(){document.querySelectorAll('.scenario-btn').forEach(b=>{const n=b.id.replace('scenario-','');b.classList.toggle('active',n===activeScenario);});}
 
+const FOLDER_ICONS={m1:'🎤',m2:'🎧',m3:'🔈'};
+const FOLDER_TOPICS={m1:'audioSensorData/m1',m2:'audioSensorData/m2',m3:'audioSensorData/m3'};
 async function loadSounds(){
-  try{const r=await fetch(`${API_BASE}/api/sounds`);const sounds=await r.json();const g=document.getElementById('audioGrid');g.innerHTML='';
-  if(sounds.length===0){g.innerHTML='<div style="color:var(--text-dim);padding:20px;text-align:center">No sound files found</div>';return;}
-  sounds.forEach(s=>{const c=document.createElement('div');c.className='audio-card';
-    const nameDiv=document.createElement('div');nameDiv.className='a-name';nameDiv.textContent='🎵 '+s.filename;
-    const metaDiv=document.createElement('div');metaDiv.className='a-meta';metaDiv.textContent=s.size_kb+' KB · '+s.duration_s+'s · '+s.sample_rate+' Hz';
-    const btn=document.createElement('button');btn.className='a-send';btn.textContent='📤 Send to MQTT';
-    btn.addEventListener('click',function(){sendAudio(s.filename,this);});
-    c.appendChild(nameDiv);c.appendChild(metaDiv);c.appendChild(btn);
-    g.appendChild(c);})}catch(e){console.error(e);document.getElementById('audioGrid').innerHTML='<div style="color:var(--red);padding:20px">Failed to load sounds</div>';}
+  try{const r=await fetch(`${API_BASE}/api/sounds`);const groups=await r.json();const container=document.getElementById('audioGroups');container.innerHTML='';
+  const keys=Object.keys(groups);
+  if(keys.length===0){container.innerHTML='<div style="color:var(--text-dim);padding:20px;text-align:center">No sound folders found. Create m1/, m2/, m3/ in sounds/</div>';return;}
+  keys.forEach(folder=>{
+    const section=document.createElement('div');section.className='audio-section';
+    const title=document.createElement('div');title.className='audio-section-title';
+    title.innerHTML=`${FOLDER_ICONS[folder]||'📁'} <span>${folder.toUpperCase()}</span> <span class="folder-badge">${groups[folder].length} files</span>`;
+    const body=document.createElement('div');body.className='audio-section-body';
+    // Per-section topic input
+    const topicRow=document.createElement('div');topicRow.className='topic-row';topicRow.style.marginBottom='12px';
+    const topicLabel=document.createElement('span');topicLabel.className='topic-label';topicLabel.textContent='MQTT Topic:';
+    topicLabel.style.marginRight='8px';topicLabel.style.whiteSpace='nowrap';
+    const topicInput=document.createElement('input');topicInput.type='text';topicInput.className='topic-input';
+    topicInput.id='topic-'+folder;topicInput.value=FOLDER_TOPICS[folder]||'audioSensorData/'+folder;
+    topicInput.placeholder='Enter MQTT topic for '+folder.toUpperCase()+'...';
+    topicRow.appendChild(topicLabel);topicRow.appendChild(topicInput);
+    body.appendChild(topicRow);
+    const grid=document.createElement('div');grid.className='audio-grid';
+    groups[folder].forEach(s=>{
+      const c=document.createElement('div');c.className='audio-card';
+      const nameDiv=document.createElement('div');nameDiv.className='a-name';nameDiv.textContent='🎵 '+s.filename;
+      const metaDiv=document.createElement('div');metaDiv.className='a-meta';metaDiv.textContent=s.size_kb+' KB · '+s.duration_s+'s · '+s.sample_rate+' Hz';
+      const btn=document.createElement('button');btn.className='a-send';btn.textContent='📤 Send to MQTT';
+      btn.addEventListener('click',function(){sendAudio(s.path,folder,this);});
+      c.appendChild(nameDiv);c.appendChild(metaDiv);c.appendChild(btn);
+      grid.appendChild(c);});
+    body.appendChild(grid);section.appendChild(title);section.appendChild(body);container.appendChild(section);
+  });}catch(e){console.error(e);document.getElementById('audioGroups').innerHTML='<div style="color:var(--red);padding:20px">Failed to load sounds</div>';}
 }
 
-async function sendAudio(filename,btn){
-  const topic=document.getElementById('audioTopic').value;
-  if(!topic){alert('Please enter an MQTT topic');return;}
+async function sendAudio(path,folder,btn){
+  const topicInput=document.getElementById('topic-'+folder);
+  const topic=topicInput?topicInput.value:'';
+  if(!topic){alert('Please enter an MQTT topic for '+folder.toUpperCase());return;}
   btn.disabled=true;btn.classList.add('sending');btn.textContent='⏳ Sending...';
-  try{const r=await fetch(`${API_BASE}/api/send-audio`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename,topic})});
+  try{const r=await fetch(`${API_BASE}/api/send-audio`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path,topic})});
   const res=await r.json();if(res.status==='ok'){btn.textContent=`✅ Sent ${(res.bytes_sent/1024).toFixed(0)} KB`;setTimeout(()=>{btn.textContent='📤 Send to MQTT';btn.classList.remove('sending');btn.disabled=false;},2000);
-  }else{btn.textContent='❌ Failed';setTimeout(()=>{btn.textContent='📤 Send to MQTT';btn.classList.remove('sending');btn.disabled=false;},2000);}
+  }else{btn.textContent='❌ '+res.error;setTimeout(()=>{btn.textContent='📤 Send to MQTT';btn.classList.remove('sending');btn.disabled=false;},3000);}
   }catch(e){btn.textContent='❌ Error';setTimeout(()=>{btn.textContent='📤 Send to MQTT';btn.classList.remove('sending');btn.disabled=false;},2000);}
 }
 
@@ -202,8 +223,6 @@ async function pollData(){
     const a=d.humidity.value>85;updBadge('badgeHumid',a?'warning':'normal',a?'Warning':'Normal');pulse('cardHumid');}
   if(d.weight){document.getElementById('valWeight').textContent=d.weight.value;document.getElementById('timeWeight').textContent=d.weight.timestamp;
     updBadge('badgeWeight',d.weight.value<20?'warning':'normal',d.weight.value<20?'Low':'Normal');pulse('cardWeight');}
-  if(d.population){document.getElementById('valPop').textContent=d.population.value.toLocaleString();document.getElementById('timePop').textContent=d.population.timestamp;
-    const lo=d.population.value<25000;updBadge('badgePop',lo?'warning':'normal',lo?'Low':'Healthy');pulse('cardPop');}
   if(d.scenario){activeScenario=d.scenario;updateBadgeHeader(d.scenario_display||d.scenario,d.alert_level||'normal');updateScenarioButtons();}
   if(d.chart&&chart){chart.data.labels=d.chart.labels;chart.data.datasets[0].data=d.chart.temperature;chart.data.datasets[1].data=d.chart.humidity;chart.update('none');}
   if(d.alerts&&d.alerts.length>0)renderAlerts(d.alerts);

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { fetchAllHives } from '../api/hiveApi';
@@ -119,6 +119,23 @@ function FitBounds({ hives }) {
   return null;
 }
 
+/* ── Focus on a specific hive from query param ── */
+function FocusOnHive({ hives, hiveId }) {
+  const map = useMap();
+  const done = useRef(false);
+
+  useEffect(() => {
+    if (!hiveId || done.current) return;
+    const target = hives.find(h => h.id === hiveId);
+    if (target && target.lat && target.lng) {
+      map.flyTo([target.lat, target.lng], 15, { duration: 1.5 });
+      done.current = true;
+    }
+  }, [hives, hiveId, map]);
+
+  return null;
+}
+
 /* ── Population bar for popup ── */
 function PopulationBar({ population, max = 10000 }) {
   const pct = Math.min(100, (population / max) * 100);
@@ -156,6 +173,8 @@ export default function MapPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [viewMode, setViewMode] = useState('honey');
+  const [searchParams] = useSearchParams();
+  const focusHiveId = searchParams.get('hive');
 
   useEffect(() => {
     let cancelled = false;
@@ -215,6 +234,7 @@ export default function MapPage() {
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
         <FitBounds hives={validHives} />
+        {focusHiveId && <FocusOnHive hives={validHives} hiveId={focusHiveId} />}
 
         {validHives.map(hive => (
           <Marker

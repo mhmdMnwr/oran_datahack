@@ -3,7 +3,14 @@
  */
 import { API_BASE } from './config';
 
-const MAX_WEIGHT_KG = 25; // 25kg = 100% fill
+const MAX_HONEY_KG = 25;      // 25 kg of honey = 100% fill
+const HIVE_WOOD_KG = 7;       // weight of the hive structure
+const BEE_WEIGHT_KG = 1e-4;   // weight of one bee in kg (0.1 g)
+
+/** Derive honey weight from total weight on the scale. */
+export function getHoneyWeight(totalWeight, population) {
+  return Math.max(0, (totalWeight ?? 0) - (population ?? 0) * BEE_WEIGHT_KG - HIVE_WOOD_KG);
+}
 
 /**
  * GET /hives — Fetch all hives with latest sensor data
@@ -14,21 +21,28 @@ export async function fetchAllHives() {
   if (!res.ok) throw new Error(`Failed to fetch hives: ${res.status}`);
   const data = await res.json();
 
-  return data.map((hive) => ({
-    id: hive.id,
-    name: hive.name,
-    queenStatus: hive.queenStatus,
-    lat: hive.location?.latitude,
-    lng: hive.location?.longitude,
-    temp: hive.latestSensorData?.temperature ?? 0,
-    humid: hive.latestSensorData?.humidity ?? 0,
-    weight: hive.latestSensorData?.weight ?? 0,
-    population: hive.latestSensorData?.population ?? 0,
-    fill: Math.min(1, (hive.latestSensorData?.weight ?? 0) / MAX_WEIGHT_KG),
-    hasAlerts: hive.hasAlerts ?? false,
-    createdAt: hive.createdAt,
-    updatedAt: hive.updatedAt,
-  }));
+  return data.map((hive) => {
+    const totalWeight = hive.latestSensorData?.weight ?? 0;
+    const population = hive.latestSensorData?.population ?? 0;
+    const honeyWeight = getHoneyWeight(totalWeight, population);
+
+    return {
+      id: hive.id,
+      name: hive.name,
+      queenStatus: hive.queenStatus,
+      lat: hive.location?.latitude,
+      lng: hive.location?.longitude,
+      temp: hive.latestSensorData?.temperature ?? 0,
+      humid: hive.latestSensorData?.humidity ?? 0,
+      weight: totalWeight,
+      honeyWeight,
+      population,
+      fill: Math.min(1, honeyWeight / MAX_HONEY_KG),
+      hasAlerts: hive.hasAlerts ?? false,
+      createdAt: hive.createdAt,
+      updatedAt: hive.updatedAt,
+    };
+  });
 }
 
 /**
@@ -102,4 +116,4 @@ export async function resolveAlert(alertId) {
   return res.json();
 }
 
-export { MAX_WEIGHT_KG };
+export { MAX_HONEY_KG };
